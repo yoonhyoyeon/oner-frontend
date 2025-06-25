@@ -22,6 +22,7 @@ export default function ProfessorLecture({lectureId}) {
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const iceCandidateQueueRef = useRef([]); // ICE candidate 큐
+  const processingOfferRef = useRef(false); // Offer 처리 중 플래그
   
   // 상태 관리
   const [connectedUsers, setConnectedUsers] = useState([]);
@@ -148,29 +149,54 @@ export default function ProfessorLecture({lectureId}) {
         // 4. 서버로부터 Offer 수신 처리 (서버가 먼저 Offer를 보내는 경우)
         socket.on('offer', async (data) => {
           console.log('서버로부터 Offer 수신:', data);
+          
+          // 중복 처리 방지
+          if (processingOfferRef.current) {
+            console.warn('이미 Offer 처리 중 - 무시');
+            return;
+          }
+          
           try {
+            processingOfferRef.current = true;
+            
             // 시그널링 상태 확인
             console.log('Offer 수신 시 시그널링 상태:', peerConnection.signalingState);
             
-            if (peerConnection.signalingState === 'stable') {
+            // stable 상태이고 remote description이 없는 경우만 처리
+            if (peerConnection.signalingState === 'stable' && !peerConnection.remoteDescription) {
+              console.log('Offer 처리 시작...');
+              
               await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-              console.log('Remote description 설정 완료 - 큐에 저장된 ICE candidate 처리');
+              console.log('✅ Remote description 설정 완료');
+              
+              // 큐에 저장된 ICE candidate 처리
               await processQueuedIceCandidates();
               
-              const answer = await peerConnection.createAnswer();
-              await peerConnection.setLocalDescription(answer);
-              socket.emit('answer', { 
-                to: data.from,
-                from: socket.id,
-                fromType: 'web_client',
-                sdp: peerConnection.localDescription
-              });
-              console.log('Answer 전송 완료');
+              // 상태 재확인
+              if (peerConnection.signalingState === 'have-remote-offer') {
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                socket.emit('answer', { 
+                  to: data.from,
+                  from: socket.id,
+                  fromType: 'web_client',
+                  sdp: peerConnection.localDescription
+                });
+                console.log('✅ Answer 전송 완료');
+              } else {
+                console.warn('Answer 생성 불가 - 시그널링 상태:', peerConnection.signalingState);
+              }
             } else {
-              console.warn('Offer 무시 - 시그널링 상태:', peerConnection.signalingState);
+              console.warn('Offer 무시 - 상태:', {
+                signalingState: peerConnection.signalingState,
+                hasRemoteDescription: !!peerConnection.remoteDescription
+              });
             }
           } catch (error) {
-            console.error('Offer 처리 오류:', error);
+            console.error('❌ Offer 처리 오류:', error);
+          } finally {
+            processingOfferRef.current = false;
           }
         });
 
@@ -179,18 +205,26 @@ export default function ProfessorLecture({lectureId}) {
           console.log('Answer 수신:', data);
           try {
             // 시그널링 상태 확인
-            console.log('현재 시그널링 상태:', peerConnection.signalingState);
+            console.log('Answer 수신 시 시그널링 상태:', peerConnection.signalingState);
             
-            if (peerConnection.signalingState === 'have-local-offer') {
+            // have-local-offer 상태이고 remote description이 없는 경우만 처리
+            if (peerConnection.signalingState === 'have-local-offer' && !peerConnection.remoteDescription) {
+              console.log('Answer 처리 시작...');
+              
               await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-              console.log('Remote description 설정 완료 - 큐에 저장된 ICE candidate 처리');
+              console.log('✅ Remote description 설정 완료');
+              
+              // 큐에 저장된 ICE candidate 처리
               await processQueuedIceCandidates();
-              console.log('Answer 처리 완료');
+              console.log('✅ Answer 처리 완료');
             } else {
-              console.warn('Answer 무시 - 잘못된 시그널링 상태:', peerConnection.signalingState);
+              console.warn('Answer 무시 - 상태:', {
+                signalingState: peerConnection.signalingState,
+                hasRemoteDescription: !!peerConnection.remoteDescription
+              });
             }
           } catch (error) {
-            console.error('Answer 처리 오류:', error);
+            console.error('❌ Answer 처리 오류:', error);
           }
         });
 
@@ -285,8 +319,9 @@ export default function ProfessorLecture({lectureId}) {
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
       }
-      // ICE candidate 큐 정리
+      // ICE candidate 큐 및 플래그 정리
       iceCandidateQueueRef.current = [];
+      processingOfferRef.current = false;
       clearStream();
     };
   }, [lectureId, setStream, clearStream]);
