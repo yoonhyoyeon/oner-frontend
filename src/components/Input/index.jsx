@@ -8,6 +8,7 @@ const Input = ({
     type = 'text',
     required = false,
     disabled = false,
+    ...others
 }) => {
     return (
         <div className={styles.input_container}>
@@ -20,6 +21,7 @@ const Input = ({
                 onChange={onChange}
                 required={required}
                 disabled={disabled}
+                {...others}
             />
         </div>
     );

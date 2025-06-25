@@ -62,6 +62,7 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+    box-sizing: border-box;
 }
 
 .time_select {
@@ -102,14 +103,21 @@
     width: 100%;
 }
 
-.weight_section {
+.weight_section,
+.threshold_section {
     display: flex;
     flex-direction: column;
     gap: 16px;
     width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+    background-color: #F9FAFB;
+    border-radius: 8px;
+    border: 1px solid #E5E7EB;
 }
 
-.weight_section h3 {
+.weight_section h3,
+.threshold_section h3 {
     font-size: 16px;
     font-weight: 600;
     color: #06003A;

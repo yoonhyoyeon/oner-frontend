@@ -1,0 +1,50 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    background-color: white;
+    font-size: 14px;
+    color: #1F2937;
+    transition: all 0.2s ease;
+}
+
+.select[multiple] {
+    height: 120px;
+}
+
+.select:focus {
+    outline: none;
+    border-color: #4F46E5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+.select.error {
+    border-color: #EF4444;
+}
+
+.select.error:focus {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
+}
+
+.select option {
+    padding: 8px;
+}
+
+.select option:checked {
+    background-color: #4F46E5;
+    color: white;
+} 

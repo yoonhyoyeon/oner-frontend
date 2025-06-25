@@ -3,12 +3,24 @@ import { useState, useEffect, useMemo } from 'react';
 import styles from './index.module.css';
 import Input from '@/components/Input';
 import WeightSelect from '@/components/WeightSelect';
+import Select from '@/components/Select';
 
 const AddCoursePopup = ({setIsOpen}) => {
+    const dayOptions = [
+        { value: 'MON', label: '월요일' },
+        { value: 'TUE', label: '화요일' },
+        { value: 'WED', label: '수요일' },
+        { value: 'THU', label: '목요일' },
+        { value: 'FRI', label: '금요일' },
+        { value: 'SAT', label: '토요일' },
+        { value: 'SUN', label: '일요일' },
+    ];
+
     const [formData, setFormData] = useState({
         courseName: '',
-        dayOfWeek: '',
+        dayOfWeek: [],
         startTime: '',
+        endTime: '',
         location: '',
         studentInfo: ''
     });
@@ -68,10 +80,10 @@ const AddCoursePopup = ({setIsOpen}) => {
         }));
     };
 
-    const handleChange = (field) => (e) => {
+    const handleChange = (field) => (value) => {
         setFormData(prev => ({
             ...prev,
-            [field]: e.target.value
+            [field]: value
         }));
     };
 
@@ -102,20 +114,35 @@ const AddCoursePopup = ({setIsOpen}) => {
                         label="강의 이름"
                         placeholder="강의 이름을 입력해주세요"
                         value={formData.courseName}
-                        onChange={handleChange('courseName')}
+                        onChange={(e) => handleChange('courseName')(e.target.value)}
                     />
 
                     <div className={styles.time_select}>
-                        <Input
-                            label="강의 일시"
+                        <Select
+                            label="강의 요일"
                             placeholder="요일 선택"
                             value={formData.dayOfWeek}
                             onChange={handleChange('dayOfWeek')}
+                            options={dayOptions}
+                            multiple={true}
                         />
+                    </div>
+                    <div className={styles.time_select}>
                         <Input
-                            placeholder="시간 선택"
+                            label="강의 시간(시작)"
+                            placeholder="시작 시간 입력"
                             value={formData.startTime}
-                            onChange={handleChange('startTime')}
+                            onChange={(e) => handleChange('startTime')(e.target.value)}
+                            type="time"
+                        />
+                    </div>
+                    <div className={styles.time_select}>
+                        <Input
+                            label="강의 시간(종료)"
+                            placeholder="종료 시간 입력"
+                            value={formData.endTime}
+                            onChange={(e) => handleChange('endTime')(e.target.value)}
+                            type="time"
                         />
                     </div>
 
@@ -124,7 +151,7 @@ const AddCoursePopup = ({setIsOpen}) => {
                             label="강의실 위치"
                             placeholder="주소를 입력해주세요"
                             value={formData.location}
-                            onChange={handleChange('location')}
+                            onChange={(e) => handleChange('location')(e.target.value)}
                         />
                         <div className={styles.map_placeholder}>
                             {/* 지도 컴포넌트가 들어갈 자리 */}
@@ -135,19 +162,14 @@ const AddCoursePopup = ({setIsOpen}) => {
                         label="학생 정보"
                         placeholder="내 파일 선택"
                         value={formData.studentInfo}
-                        onChange={handleChange('studentInfo')}
+                        onChange={(e) => handleChange('studentInfo')(e.target.value)}
                     />
 
                     <div className={styles.weight_section}>
-                        <h3>임계값 설정</h3>
+                        <h3>가중치 설정</h3>
                         {!validationResult.isValid && validationResult.errors.weightSum && (
                             <p className={styles.error_message}>
                                 가중치의 합이 1이 되어야 합니다. (현재: {validationResult.weightSum.toFixed(2)})
-                            </p>
-                        )}
-                        {!validationResult.isValid && validationResult.errors.excellent && (
-                            <p className={styles.error_message}>
-                                '최우수' 임계값은 '주의필요' 임계값보다 커야 합니다.
                             </p>
                         )}
                         <div className={styles.weight_list}>
@@ -181,6 +203,17 @@ const AddCoursePopup = ({setIsOpen}) => {
                                 onChange={handleWeightChange('headPose')}
                                 error={validationResult.errors.headPose}
                             />
+                        </div>
+                    </div>
+
+                    <div className={styles.threshold_section}>
+                        <h3>임계값 설정</h3>
+                        {!validationResult.isValid && validationResult.errors.excellent && (
+                            <p className={styles.error_message}>
+                                '최우수' 임계값은 '주의필요' 임계값보다 커야 합니다.
+                            </p>
+                        )}
+                        <div className={styles.weight_list}>
                             <WeightSelect 
                                 label="'최우수' 임계값" 
                                 value={weights.excellent}
@@ -195,8 +228,8 @@ const AddCoursePopup = ({setIsOpen}) => {
                             />
                             <WeightSelect 
                                 label="'출석' 임계값" 
-                                value={weights.good}
-                                onChange={handleWeightChange('good')}
+                                value={weights.attend}
+                                onChange={handleWeightChange('attend')}
                             />
                         </div>
                     </div>
