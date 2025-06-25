@@ -1,0 +1,50 @@
+.table_container {
+    width: 100%;
+    margin-bottom: 24px;
+}
+
+.scroll {
+    height: 500px;
+    overflow-y: auto;
+}
+
+.table_container table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table_container th {
+    background: #F8F8F8;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.table_container td {
+    padding: 12px;
+    border-bottom: 1px solid #eaeaea;
+    color: #666;
+}
+
+/* 스크롤바 스타일링 */
+.scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.scroll::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+    background: #615BF7;
+    border-radius: 4px;
+}
+
+.scroll::-webkit-scrollbar-thumb:hover {
+    background: #4F48D6;
+}

@@ -1,0 +1,114 @@
+.container {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #06003A;
+}
+
+.backButton {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #06003A;
+}
+
+.backButton:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 50%;
+}
+
+.section {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #06003A;
+    margin-bottom: 10px;
+}
+
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.sectionHeader h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #06003A;
+    margin-bottom: 10px;
+}
+
+.buttonGroup {
+    display: flex;
+    gap: 12px;
+}
+
+.editButton,
+.uploadButton {
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.editButton {
+    background-color: rgba(79, 72, 214, 0.10);
+    color: #4F48D6;
+    border: none;
+}
+
+.editButton:hover {
+    background-color: rgba(79, 72, 214, 0.15);
+}
+
+.uploadButton {
+    background-color: #4F48D6;
+    color: white;
+    border: none;
+}
+
+.uploadButton:hover {
+    background-color: #3f39ac;
+}
+
+.classInfo .classRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.classInfo .classRow h3 {
+    font-size: 16px;
+    font-weight: 500;
+    color: #06003A;
+}
+
+.classInfo .classDetails {
+    display: flex;
+    gap: 24px;
+    color: #6B7280;
+}

@@ -1,0 +1,46 @@
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 200px 20px 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 16px;
+}
+
+.subtitle {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #615BF7;
+    margin-bottom: 8px;
+}
+
+.time {
+    font-size: 1.25rem;
+    color: #666;
+    margin-bottom: 32px;
+}
+
+.homeButton {
+    background: #615BF7;
+    color: white;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 48px;
+    transition: background 0.2s;
+}
+
+.homeButton:hover {
+    background: #4A45C6;
+}

@@ -1,0 +1,170 @@
+.container {
+    padding: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    height: 100%;
+}
+
+.title {
+    color: #381570;
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.add_button {
+    background-color: #615BF7;
+    color: #fff;
+    border: none;
+    padding: 12px 55px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+.add_button:hover {
+    background-color: #4F48D6;
+}
+
+.course_item {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 16px;
+}
+
+.course_header {
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #eaeaea;
+}
+
+.course_header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+}
+
+.course_info {
+    display: flex;
+    gap: 24px;
+    color: #666;
+}
+
+.course_actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.edit_icon {
+    cursor: pointer;
+}
+.toggle_btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+}
+.selected .toggle_btn img {
+    transition: transform 0.3s ease-in-out;
+}
+.selected .toggle_btn img {
+    transform: rotate(180deg);
+}
+
+.student_info {
+    animation: fadeIn 0.3s ease-in-out;
+    padding: 24px;
+}
+
+.student_count {
+    margin-bottom: 16px;
+    font-size: 16px;
+    color: #666;
+}
+
+.highlight {
+    color: #615BF7;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+.student_table {
+    margin-bottom: 24px;
+    overflow-x: auto;
+}
+
+.student_table table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow-y: auto;
+}
+.student_table table tbody {
+    max-height: 500px;
+    overflow-y: auto;
+}
+.student_table th {
+    background: #F8F8F8;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+}
+
+.student_table td {
+    padding: 12px;
+    border-bottom: 1px solid #eaeaea;
+    color: #666;
+}
+
+.action_buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+}
+
+.outline_button {
+    padding: 12px 24px;
+    border: 1px solid #615BF7;
+    color: #615BF7;
+    background: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.outline_button:hover {
+    background: #F8F8FF;
+}
+
+.primary_button {
+    padding: 12px 24px;
+    background: #615BF7;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+.primary_button:hover {
+    background: #4F48D6;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}

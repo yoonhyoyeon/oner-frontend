@@ -1,0 +1,20 @@
+.circular_progress_bar_text {
+    font-size: 22px;
+    font-weight: 600;
+    color: #15172E;
+    text-align: center;
+}
+.circular_progress_bar_text_active {
+    font-size: 22px;
+    font-weight: 600;
+    color: #15172E;
+    text-align: center;
+}
+.circular_progress_bar_text .small_text, .circular_progress_bar_text_active .small_text {
+    display: block;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    color: #15172E80;
+    margin-bottom: 4px;
+}

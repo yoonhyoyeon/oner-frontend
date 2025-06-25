@@ -1,0 +1,164 @@
+.popup_background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.popup_container {
+    background: white;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.popup_header {
+    padding: 24px;
+    border-bottom: 1px solid #E5E7EB;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+}
+
+.popup_header h2 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #06003A;
+    margin: 0;
+}
+
+.close_button {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #6B7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.close_button:hover {
+    background-color: #F3F4F6;
+}
+
+.popup_content {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.time_select {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.time_select > div {
+    flex: 1;
+    min-width: 0;
+}
+
+.time_select input {
+    width: 100%;
+}
+
+.location_section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.location_section > div {
+    width: 100%;
+}
+
+.map_placeholder {
+    width: 100%;
+    height: 200px;
+    background-color: #F3F4F6;
+    border-radius: 8px;
+    border: 1px solid #E5E7EB;
+}
+
+.popup_content > div {
+    width: 100%;
+}
+
+.weight_section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+.weight_section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #06003A;
+    margin: 0;
+}
+
+.error_message {
+    color: #EF4444;
+    font-size: 14px;
+    margin: 0;
+    padding: 8px 12px;
+    background-color: rgba(239, 68, 68, 0.1);
+    border-radius: 6px;
+}
+
+.weight_list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.popup_footer {
+    padding: 24px;
+    border-top: 1px solid #E5E7EB;
+    position: sticky;
+    bottom: 0;
+    background: white;
+}
+
+.submit_button {
+    width: 100%;
+    padding: 12px;
+    background-color: #4F48D6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.submit_button:hover:not(:disabled) {
+    background-color: #3f39ac;
+}
+
+.submit_button.disabled,
+.submit_button:disabled {
+    background-color: #E5E7EB;
+    color: #9CA3AF;
+    cursor: not-allowed;
+}

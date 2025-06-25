@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Video Chat</title>
+    <style>
+      #videos {
+        display: flex;
+        justify-content: center;
+      }
+      video {
+        width: 320px;
+        height: 240px;
+        margin: 10px;
+        border: 1px solid black;
+      }
+      #chatbox {
+        width: 320px;
+        margin: 10px;
+        padding: 10px;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="videos">
+      <video id="localVideo" autoplay muted></video>
+      <video id="remoteVideo" autoplay></video>
+    </div>
+    <div id="chatbox">
+      <textarea id="chatArea" rows="10" cols="30" readonly></textarea><br />
+      <input type="text" id="messageInput" /><button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script>
+      const localVideo = document.getElementById('localVideo');
+      const remoteVideo = document.getElementById('remoteVideo');
+      const chatArea = document.getElementById('chatArea');
+      const messageInput = document.getElementById('messageInput');
+      const room = 'testRoom';
+      const socket = io('http://localhost:3000', {
+        transports: ['websocket'],
+        upgrade: false,
+      });
+
+      let localStream;
+      let peerConnection;
+      const config = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      };
+
+      // 1. 미디어 스트림 요청
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          localStream = stream;
+          localVideo.srcObject = stream;
+          socket.emit('joinRoom', { room });
+        })
+        .catch((error) => {
+          console.error('Error accessing media devices.', error);
+        });
+
+      // 2. offer/answer signaling
+      socket.on('usersInRoom', (users) => {
+        if (users.length > 1) {
+          createPeerConnection();
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
+
+          peerConnection.createOffer()
+            .then((offer) => peerConnection.setLocalDescription(offer))
+            .then(() => {
+              socket.emit('offer', { sdp: peerConnection.localDescription });
+            });
+        }
+      });
+
+      socket.on('offer', (data) => {
+        createPeerConnection();
+        peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+          .then(() => {
+            localStream.getTracks().forEach((track) => {
+              peerConnection.addTrack(track, localStream);
+            });
+            return peerConnection.createAnswer();
+          })
+          .then((answer) => peerConnection.setLocalDescription(answer))
+          .then(() => {
+            socket.emit('answer', { sdp: peerConnection.localDescription });
+          });
+      });
+
+      socket.on('answer', (data) => {
+        peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      });
+
+      socket.on('ice-candidate', (data) => {
+        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      });
+
+      function createPeerConnection() {
+        peerConnection = new RTCPeerConnection(config);
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('ice-candidate', { candidate: event.candidate });
+          }
+        };
+
+        peerConnection.ontrack = (event) => {
+          remoteVideo.srcObject = event.streams[0];
+        };
+      }
+
+      function sendMessage() {
+        const message = messageInput.value;
+        chatArea.value += `Me: ${message}\n`;
+        messageInput.value = '';
+      }
+    </script>
+  </body>
+</html>
