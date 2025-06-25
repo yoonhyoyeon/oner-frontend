@@ -1,0 +1,90 @@
+.container {
+    padding: 24px;
+    width: 1000px;
+    margin: 0 auto;
+}
+
+.section {
+    background: #FFFFFF;
+    border-radius: 12px;
+    margin-bottom: 40px;
+}
+
+.section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #06003A;
+    margin-bottom: 16px;
+}
+
+.attendanceBar {
+    display: flex;
+    height: 32px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.present {
+    background-color: #4ADE80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    transition: width 0.3s ease;
+}
+
+.late {
+    background-color: #FB923C;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    transition: width 0.3s ease;
+}
+
+.absent {
+    background-color: #F87171;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    transition: width 0.3s ease;
+}
+
+.graph {
+    width: 100%;
+    padding-right: 24px;
+    box-sizing: border-box;
+    background: #FFFFFF;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+/* 출결 상태 스타일 */
+.attendanceStatus {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    width: fit-content;
+    min-width: 60px;
+}
+
+.attendanceStatus.present {
+    background-color: rgba(74, 222, 128, 0.1);
+    color: #4ADE80;
+}
+
+.attendanceStatus.late {
+    background-color: rgba(251, 146, 60, 0.1);
+    color: #FB923C;
+}
+
+.attendanceStatus.absent {
+    background-color: rgba(248, 113, 113, 0.1);
+    color: #F87171;
+} 

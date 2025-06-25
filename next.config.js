@@ -4,7 +4,7 @@ const nextConfig = {
         return [
             {
                 source: '/api/:path*',
-                destination: `http://13.238.227.125:3000/api/:path*` // 백엔드 서버 주소
+                destination: 'http://13.238.227.125:3000/:path*' // 백엔드 서버 주소
             }
         ]
     },

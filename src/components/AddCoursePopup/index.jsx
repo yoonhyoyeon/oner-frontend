@@ -4,6 +4,7 @@ import styles from './index.module.css';
 import Input from '@/components/Input';
 import WeightSelect from '@/components/WeightSelect';
 import Select from '@/components/Select';
+import authFetch from '@/utils/authFetch';
 
 const AddCoursePopup = ({setIsOpen}) => {
     const dayOptions = [
@@ -16,13 +17,36 @@ const AddCoursePopup = ({setIsOpen}) => {
         { value: 'SUN', label: '일요일' },
     ];
 
+    // 요일 매핑 객체
+    const dayMapping = {
+        MON: '월',
+        TUE: '화',
+        WED: '수',
+        THU: '목',
+        FRI: '금',
+        SAT: '토',
+        SUN: '일'
+    };
+
+    const formatTimeString = (days, startTime, endTime) => {
+        if (!days.length || !startTime || !endTime) return '';
+
+        // 요일 변환 (예: ['MON', 'THU'] -> '월,목')
+        const formattedDays = days
+            .map(day => dayMapping[day])
+            .join(',');
+
+        // 시간 형식 변환 (예: "14:00" -> "14:00")
+        return `${formattedDays} ${startTime}~${endTime}`;
+    };
+
     const [formData, setFormData] = useState({
         courseName: '',
         dayOfWeek: [],
         startTime: '',
         endTime: '',
         location: '',
-        studentInfo: ''
+        studentInfo: null
     });
 
     const [weights, setWeights] = useState({
@@ -87,10 +111,69 @@ const AddCoursePopup = ({setIsOpen}) => {
         }));
     };
 
-    const handleSubmit = () => {
-        if (validationResult.isValid) {
-            // TODO: 강의 개설 로직 구현
-            setIsOpen(false);
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        setFormData(prev => ({
+            ...prev,
+            studentInfo: file
+        }));
+    };
+
+    const handleSubmit = async () => {
+        if (!validationResult.isValid) return;
+
+        // 필수 입력값 검증
+        if (!formData.courseName || !formData.dayOfWeek.length || !formData.startTime || !formData.endTime) {
+            alert('강의 이름, 요일, 시작 시간, 종료 시간은 필수 입력값입니다.');
+            return;
+        }
+
+        try {
+            // FormData 객체 생성
+            const apiFormData = new FormData();
+            
+            // 파일 추가
+            if (formData.studentInfo) {
+                apiFormData.append('file', formData.studentInfo);
+            }
+
+            // 강의 이름
+            apiFormData.append('name', formData.courseName);
+            
+            // 고정 값들
+            apiFormData.append('group', '000');
+            apiFormData.append('longitude', 0);
+            apiFormData.append('latitude', 0);
+            
+            // 시간 문자열 생성
+            const timeString = formatTimeString(
+                formData.dayOfWeek,
+                formData.startTime,
+                formData.endTime
+            );
+            
+            apiFormData.append('startsAt', timeString);
+            apiFormData.append('endsAt', timeString);
+
+            console.log('전송할 시간:', timeString); // 디버깅용
+
+            const response = await authFetch('/api/api/lecture', {
+                method: 'POST',
+                body: apiFormData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('강의 생성 성공:', result);
+                setIsOpen(false);
+            } else {
+                const error = await response.json();
+                console.error('강의 생성 실패:', error);
+                alert('강의 생성에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('API 호출 에러:', error);
+            alert('강의 생성 중 오류가 발생했습니다.');
         }
     };
 
@@ -115,6 +198,7 @@ const AddCoursePopup = ({setIsOpen}) => {
                         placeholder="강의 이름을 입력해주세요"
                         value={formData.courseName}
                         onChange={(e) => handleChange('courseName')(e.target.value)}
+                        required
                     />
 
                     <div className={styles.time_select}>
@@ -158,12 +242,14 @@ const AddCoursePopup = ({setIsOpen}) => {
                         </div>
                     </div>
 
-                    <Input
-                        label="학생 정보"
-                        placeholder="내 파일 선택"
-                        value={formData.studentInfo}
-                        onChange={(e) => handleChange('studentInfo')(e.target.value)}
-                    />
+                    <div className={styles.file_input}>
+                        <label>학생 정보 파일</label>
+                        <input
+                            type="file"
+                            onChange={handleFileChange}
+                            accept=".csv,.xlsx,.xls"
+                        />
+                    </div>
 
                     <div className={styles.weight_section}>
                         <h3>가중치 설정</h3>

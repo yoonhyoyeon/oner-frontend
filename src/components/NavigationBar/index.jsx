@@ -4,9 +4,17 @@ import styles from "./index.module.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import cx from "classnames";
+import { useEffect } from "react";
+import { useUserStore } from "@/store/userStore";
+import { useRouter } from "next/navigation";
 
 const ProfessorNavigationBar = () => {
     const pathname = usePathname();
+    const router = useRouter();
+    const { user,fetchUser,logout } = useUserStore();
+    useEffect(() => {
+        fetchUser();
+    }, []);
 
     if (pathname.startsWith("/professor/lecture")||pathname.startsWith("/professor/lectureinfo")) {
         return null;
@@ -44,18 +52,21 @@ const ProfessorNavigationBar = () => {
         <div className={styles.userInfo}>
             <div className={styles.userInfo__name}>
                 <img src="/images/icons/user.png" alt="user" width={20} />
-                <span>김교수</span>
+                <span>{user?.name}</span>
             </div>
-            <Link href="/student/logout">
-                <img src="/images/icons/logout.png" alt="logout" width={20} />
-            </Link>
+            <img style={{cursor: 'pointer'}} src="/images/icons/logout.png" alt="logout" width={20} onClick={() => {logout(); router.push('/signin');}} />
         </div>
     </div>
   );
 }
 
 const StudentNavigationBar = () => {
+    const { user,logout,fetchUser } = useUserStore();
     const pathname = usePathname();
+    const router = useRouter();
+    useEffect(() => {
+        fetchUser();
+    }, []);
     if (pathname.startsWith("/student/lecture")) {
         return null;
     }
@@ -102,11 +113,9 @@ const StudentNavigationBar = () => {
             <div className={styles.userInfo}>
                 <div className={styles.name_container}>
                     <img src="/images/icons/user.png" alt="user" width={20} />
-                    <span>김학생</span>
+                    <span>{user?.name}</span>
                 </div>
-                <Link href="/student/logout">
-                    <img src="/images/icons/logout.png" alt="logout" width={20} />
-                </Link>
+                <img style={{cursor: 'pointer'}} src="/images/icons/logout.png" alt="logout" width={20} onClick={() => {logout(); router.push('/signin');}} />
             </div>
         </div>
     );

@@ -68,7 +68,7 @@ const ProfessorCourses = () => {
                                             <Link href={`/professor/courses/${course.id}`}>
                                                 <button className={styles.outline_button}>과목 자세히보기</button>
                                             </Link>
-                                            <Link href={`/professor/lecture/${course.id}`}>
+                                            <Link href={`/professor/lecture/${course.id}/setting`}>
                                                 <button className={styles.primary_button}>수업 시작하기</button>
                                             </Link>
                                         </div>
