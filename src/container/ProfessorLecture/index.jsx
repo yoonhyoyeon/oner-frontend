@@ -1,369 +1,852 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import styles from './index.module.css';
 import { useMediaStore } from '@/store/mediaStore';
 import { useRouter } from 'next/navigation';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
-export default function ProfessorLecture({lectureId}) {
-  // Zustand 전역 상태
-  const myStream = useMediaStore(state => state.stream);
-  const videoOn = useMediaStore(state => state.videoOn);
-  const audioOn = useMediaStore(state => state.audioOn);
-  const setAudioOn = useMediaStore(state => state.setAudioOn);
-  const setVideoOn = useMediaStore(state => state.setVideoOn);
-  const setStream = useMediaStore(state => state.setStream);
-  const clearStream = useMediaStore(state => state.clearStream);
-  
-  const mainVideoRef = useRef(null);
+// WebRTC 상태 열거형
+const WebRTCState = {
+  IDLE: 'idle',
+  INITIALIZING: 'initializing',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  ERROR: 'error'
+};
+
+export default function ProfessorLecture({ lectureId }) {
   const router = useRouter();
-  const socketRef = useRef(null);
-  const peerConnectionRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const iceCandidateQueueRef = useRef([]); // ICE candidate 큐
-  const processingOfferRef = useRef(false); // Offer 처리 중 플래그
   
-  // 상태 관리
-  const [connectedUsers, setConnectedUsers] = useState([]);
+  // WebRTC 상태 관리
+  const [state, setState] = useState(WebRTCState.IDLE);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [userCount, setUserCount] = useState(1);
+  const [isMicEnabled, setIsMicEnabled] = useState(true);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  
+  // 미디어 관련 refs
+  const localVideoRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteRenderersRef = useRef({});
+  const peerConnectionsRef = useRef({});
+  
+  // 소켓 관련 refs
+  const socketRef = useRef(null);
+  const room = 'testRoom';
+  const lastUsersUpdateTimeRef = useRef(null);
+  const lastUsersListHashRef = useRef(null);
+  const processingUsersRef = useRef(new Set());
+  
+  // UI 상태
+  const [remoteStreams, setRemoteStreams] = useState({});
   const [chatMessages, setChatMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [lectureTime, setLectureTime] = useState(0);
-  const [remoteStream, setRemoteStream] = useState(null);
+  const [isDisposed, setIsDisposed] = useState(false);
 
-  // 시간 포맷팅
+  // 시간 포맷 함수
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // 강의 시간 타이머
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setLectureTime(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // 상태 업데이트 함수
+  const updateState = (newState, message = null, error = null) => {
+    if (isDisposed) return;
+    
+    setState(newState);
+    if (message) setStatusMessage(message);
+    if (error) setErrorMessage(error);
+    console.log(`WebRTC 상태 변경: ${newState}, 메시지: ${message}`);
+  };
 
-  // WebRTC 및 Socket.io 초기화
-  useEffect(() => {
-    const initializeConnection = async () => {
+  // 로컬 스트림 초기화
+  const initializeLocalStream = async () => {
+    try {
+      console.log('로컬 스트림 초기화 시작');
+
+      const constraints = {
+        audio: true,
+        video: {
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: 'user'
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+
+      if (stream) {
+        console.log('로컬 스트림 생성 성공');
+        console.log('비디오 트랙 수:', stream.getVideoTracks().length);
+        console.log('오디오 트랙 수:', stream.getAudioTracks().length);
+
+        // 비디오 트랙 상태 확인
+        const videoTracks = stream.getVideoTracks();
+        videoTracks.forEach(track => {
+          console.log(`비디오 트랙 상태 - enabled: ${track.enabled}, kind: ${track.kind}`);
+        });
+
+        setIsVideoEnabled(stream.getVideoTracks().length > 0);
+        setIsMicEnabled(stream.getAudioTracks().length > 0);
+
+        // 로컬 비디오에 스트림 할당
+        await assignStreamToRenderer();
+      }
+    } catch (error) {
+      console.log('로컬 스트림 초기화 오류:', error);
+      
+      // 단순한 제약조건으로 재시도
       try {
-        console.log('미디어 스트림 획득 시작...');
-        
-        // 1. 캠 켜기
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: true 
+        console.log('단순한 제약조건으로 재시도');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true
         });
-        console.log('미디어 스트림 획득 성공:', stream);
         
-        setStream(stream);
         localStreamRef.current = stream;
+        setIsVideoEnabled(stream.getVideoTracks().length > 0);
+        setIsMicEnabled(stream.getAudioTracks().length > 0);
         
-        // 비디오/오디오 상태 초기화
-        setVideoOn(true);
-        setAudioOn(true);
+        await assignStreamToRenderer();
+        console.log('단순한 제약조건으로 재시도 성공');
+      } catch (error2) {
+        console.log('재시도도 실패:', error2);
+        setIsVideoEnabled(false);
+        setIsMicEnabled(false);
+        throw new Error('카메라 접근 실패');
+      }
+    }
+  };
 
-        // Socket.io 연결 - test.html과 동일한 방식
-        const socket = io('http://13.238.227.125:3000', {
-          transports: ['websocket'],
-          forceNew: true,
-          reconnection: false
-        });
-        socketRef.current = socket;
+  // 로컬 스트림을 비디오 요소에 할당
+  const assignStreamToRenderer = async () => {
+    try {
+      if (!localVideoRef.current) {
+        console.log('❌ 비디오 요소가 null - 스트림 할당 불가');
+        return;
+      }
 
-        // PeerConnection 생성
-        const peerConnection = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        });
-        peerConnectionRef.current = peerConnection;
+      if (!localStreamRef.current) {
+        console.log('❌ 로컬 스트림이 null - 스트림 할당 불가');
+        return;
+      }
 
-        // 로컬 스트림 트랙 추가
-        stream.getTracks().forEach(track => {
-          console.log(`트랙 추가 (${track.kind}):`, track);
-          peerConnection.addTrack(track, stream);
-        });
+      if (isDisposed) {
+        console.log('❌ 컴포넌트가 disposed 상태 - 스트림 할당 불가');
+        return;
+      }
 
-        // 2. ICE 후보 전송
-        peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log('ICE candidate 전송:', event.candidate);
-            socket.emit('ice-candidate', { 
-              from: socket.id,
-              candidate: event.candidate
-            });
-          }
-        };
+      console.log('🎥 비디오 요소에 로컬 스트림 할당 시작');
 
-        // 3. 상대 영상 수신
-        peerConnection.ontrack = (event) => {
-          console.log('🎥 원격 스트림 수신:', event.streams[0]);
-          setRemoteStream(event.streams[0]);
-        };
+      // 기존 할당 해제
+      localVideoRef.current.srcObject = null;
+      await new Promise(resolve => setTimeout(resolve, 50));
 
-        // ICE candidate 큐 처리 함수
-        const processQueuedIceCandidates = async () => {
-          console.log(`큐에 저장된 ICE candidate ${iceCandidateQueueRef.current.length}개 처리 중...`);
-          const candidates = [...iceCandidateQueueRef.current];
-          iceCandidateQueueRef.current = [];
-          
-          for (const candidate of candidates) {
-            try {
-              await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-              console.log('큐에서 ICE candidate 추가 성공');
-            } catch (e) {
-              console.error('큐에서 ICE candidate 추가 오류:', e);
-            }
-          }
-        };
+      // 새로 할당
+      localVideoRef.current.srcObject = localStreamRef.current;
+      console.log('🎥 비디오 요소에 로컬 스트림 할당 완료');
 
-        // 방 입장 - 클라이언트 타입 명시
-        socket.emit('joinRoom', { 
-          room: 'testRoom',
-          clientType: 'web_client',
-          deviceType: 'browser'
-        });
-        console.log('joinRoom 이벤트 전송 (web_client)');
+      // 할당 검증
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (localVideoRef.current.srcObject) {
+        console.log('✅ 비디오 스트림 할당 성공 확인');
+      } else {
+        console.log('❌ 비디오 스트림 할당 실패 - 재시도');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+    } catch (error) {
+      console.log('❌ 스트림 할당 중 오류:', error);
+    }
+  };
+
+  // 소켓 연결
+  const connectToSocket = async () => {
+    try {
+      console.log('소켓 연결 시작');
+
+      // 기존 소켓 연결 정리
+      if (socketRef.current) {
+        console.log('기존 소켓 연결 정리');
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const socket = io('http://13.238.227.125:3000', {
+        transports: ['websocket']
+      });
+      
+      socketRef.current = socket;
+
+      // 연결 상태 모니터링
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('서버 연결 타임아웃'));
+        }, 10000);
 
         socket.on('connect', () => {
-          console.log('✅ Socket 연결 성공, ID:', socket.id);
+          clearTimeout(timeout);
+          console.log('=== 소켓 연결 성공 ===');
+          console.log('Socket ID:', socket.id);
+          console.log('방 이름:', room);
+
+          // 방에 참여 - 서버에서 기대하는 형식으로 전송
+          const joinData = { 
+            room: room,
+            clientType: 'web_client',
+            deviceType: 'browser'
+          };
+          socket.emit('joinRoom', joinData);
+          console.log('joinRoom 이벤트 전송 완료:', joinData);
+          resolve();
         });
 
         socket.on('connect_error', (error) => {
-          console.error('❌ Socket 연결 에러:', error);
+          clearTimeout(timeout);
+          console.log('소켓 연결 오류:', error);
+          reject(new Error(`서버 연결 실패: ${error}`));
         });
 
         socket.on('disconnect', (reason) => {
-          console.log('🔌 Socket 연결 해제:', reason);
+          console.log('소켓 연결 해제:', reason);
         });
 
-        // 모든 이벤트 로깅
-        const originalEmit = socket.emit;
-        socket.emit = function(...args) {
-          console.log('📤 Socket 이벤트 전송:', args[0], args[1]);
-          return originalEmit.apply(this, args);
-        };
+        setupSocketEventHandlers(socket);
 
-        // 4. 서버로부터 Offer 수신 처리 (서버가 먼저 Offer를 보내는 경우)
-        socket.on('offer', async (data) => {
-          console.log('서버로부터 Offer 수신:', data);
-          
-          // 중복 처리 방지
-          if (processingOfferRef.current) {
-            console.warn('이미 Offer 처리 중 - 무시');
+        // 연결 후 3초 뒤에 수동으로 다른 클라이언트 찾기 시도
+        setTimeout(() => {
+          console.log('🔍 수동 연결 시도 - 다른 클라이언트 찾기');
+          socket.emit('getUsers', { room: room });
+          socket.emit('getRoomUsers', { room: room });
+          socket.emit('listUsers', { room: room });
+        }, 3000);
+      });
+    } catch (error) {
+      console.log('소켓 연결 설정 오류:', error);
+      throw new Error(`서버 연결 실패: ${error}`);
+    }
+  };
+
+  // 소켓 이벤트 핸들러 설정
+  const setupSocketEventHandlers = (socket) => {
+      // 사용자 목록 수신
+  socket.on('usersInRoom', async (users) => {
+    console.log('=== 방 사용자 목록 수신 ===');
+    console.log('데이터:', users);
+    console.log('데이터 타입:', typeof users);
+    console.log('내 소켓 ID:', socket.id);
+    console.log('현재 PeerConnection 수:', Object.keys(peerConnectionsRef.current).length);
+
+    if (Array.isArray(users)) {
+      await handleUsersInRoom(users);
+    }
+  });
+
+    // Offer 수신 처리
+    socket.on('offer', async (data) => {
+      try {
+        const { from, sdp } = data;
+        console.log('📨 Offer 수신 from:', from, '- 처리 시작');
+
+        // 기존 연결 상태 확인
+        if (peerConnectionsRef.current[from]) {
+          const existingPc = peerConnectionsRef.current[from];
+          const state = existingPc.connectionState;
+          const signalingState = existingPc.signalingState;
+
+          console.log('🔍 기존 연결 확인 - Connection:', state, 'Signaling:', signalingState);
+
+          // 이미 연결됐거나 연결 중인 경우 Offer 무시
+          if (state === 'connected' || state === 'connecting') {
+            console.log('✅ 이미 활성 연결 존재 - Offer 무시:', from, '(state:', state, ')');
             return;
           }
-          
-          try {
-            processingOfferRef.current = true;
-            
-            // 시그널링 상태 확인
-            console.log('Offer 수신 시 시그널링 상태:', peerConnection.signalingState);
-            
-            // stable 상태이고 remote description이 없는 경우만 처리
-            if (peerConnection.signalingState === 'stable' && !peerConnection.remoteDescription) {
-              console.log('Offer 처리 시작...');
-              
-              await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-              console.log('✅ Remote description 설정 완료');
-              
-              // 큐에 저장된 ICE candidate 처리
-              await processQueuedIceCandidates();
-              
-              // 상태 재확인
-              if (peerConnection.signalingState === 'have-remote-offer') {
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                
-                socket.emit('answer', { 
-                  to: data.from,
-                  from: socket.id,
-                  fromType: 'web_client',
-                  sdp: peerConnection.localDescription
-                });
-                console.log('✅ Answer 전송 완료');
-              } else {
-                console.warn('Answer 생성 불가 - 시그널링 상태:', peerConnection.signalingState);
-              }
-            } else {
-              console.warn('Offer 무시 - 상태:', {
-                signalingState: peerConnection.signalingState,
-                hasRemoteDescription: !!peerConnection.remoteDescription
-              });
-            }
-          } catch (error) {
-            console.error('❌ Offer 처리 오류:', error);
-          } finally {
-            processingOfferRef.current = false;
-          }
-        });
 
-        // Answer 수신 처리
-        socket.on('answer', async (data) => {
-          console.log('Answer 수신:', data);
-          try {
-            // 시그널링 상태 확인
-            console.log('Answer 수신 시 시그널링 상태:', peerConnection.signalingState);
-            
-            // have-local-offer 상태이고 remote description이 없는 경우만 처리
-            if (peerConnection.signalingState === 'have-local-offer' && !peerConnection.remoteDescription) {
-              console.log('Answer 처리 시작...');
-              
-              await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-              console.log('✅ Remote description 설정 완료');
-              
-              // 큐에 저장된 ICE candidate 처리
-              await processQueuedIceCandidates();
-              console.log('✅ Answer 처리 완료');
-            } else {
-              console.warn('Answer 무시 - 상태:', {
-                signalingState: peerConnection.signalingState,
-                hasRemoteDescription: !!peerConnection.remoteDescription
-              });
-            }
-          } catch (error) {
-            console.error('❌ Answer 처리 오류:', error);
+          // signaling 상태가 안정적이지 않으면 Offer 무시
+          if (signalingState !== 'stable') {
+            console.log('⚠️ Offer 무시 - 불안정한 signaling 상태:', from, '(', signalingState, ')');
+            return;
           }
-        });
 
-        // ICE Candidate 수신 처리
-        socket.on('ice-candidate', async (data) => {
-          console.log('ICE candidate 수신:', data);
-          if (data.candidate) {
-            try {
-              // remote description이 설정되었는지 확인
-              if (peerConnection.remoteDescription) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                console.log('ICE candidate 추가 성공');
-              } else {
-                console.log('Remote description 대기 중 - ICE candidate 큐에 저장');
-                iceCandidateQueueRef.current.push(data.candidate);
-              }
-            } catch (e) {
-              console.error('ICE candidate error:', e);
+          // new 상태에서 잠시 대기
+          if (state === 'new') {
+            console.log('⏳ 연결 상태 new - 0.3초 대기 후 재확인:', from);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const newState = existingPc.connectionState;
+            if (newState !== 'new') {
+              console.log('🔄 대기 후 상태 변경됨 - Offer 무시:', from, '(', newState, ')');
+              return;
             }
           }
-        });
 
-        // 5. Offer 시작 (방 참여 후 약간 기다리고 실행)
-        const createOffer = async () => {
-          try {
-            console.log('Offer 생성 시작');
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('offer', { 
+          // 실패한 연결만 정리
+          if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+            console.log('🧹 실패한 연결 정리:', from, '(state:', state, ')');
+            removePeerConnection(from);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await createPeerConnection(from, false);
+          }
+        } else {
+          console.log('🔄 Offer용 새 연결 생성:', from);
+          await createPeerConnection(from, false);
+        }
+
+        const peerConnection = peerConnectionsRef.current[from];
+        if (peerConnection) {
+          // 최종 상태 확인
+          const state = peerConnection.connectionState;
+          const signalingState = peerConnection.signalingState;
+          console.log('📊 Offer 처리 전 상태 - Connection:', state, 'Signaling:', signalingState);
+
+          // Remote description이 이미 설정되어 있는 경우 무시
+          if (peerConnection.remoteDescription) {
+            console.log('⚠️ Remote description이 이미 설정됨 - 무시');
+            return;
+          }
+
+          // signaling state가 stable인 경우만 처리
+          if (signalingState !== 'stable') {
+            console.log('⚠️ Offer 무시 - signaling 상태가 stable이 아님:', signalingState);
+            return;
+          }
+
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+
+          if (socket && socket.connected) {
+            socket.emit('answer', {
+              to: from,
               from: socket.id,
-              fromType: 'web_client',
-              sdp: peerConnection.localDescription
+              sdp: answer
             });
-            console.log('Offer 전송 완료:', peerConnection.localDescription);
-          } catch (error) {
-            console.error('Offer 생성 오류:', error);
           }
-        };
 
-        // 페이지 로드 후 약간 기다리고 Offer 시작
-        setTimeout(() => {
-          createOffer();
-        }, 2000);
-
-        // 방 사용자 목록 수신
-        socket.on('usersInRoom', (users) => {
-          console.log('방 사용자 목록:', users);
-          setConnectedUsers(users || []);
-        });
-
-        // 사용자 퇴장
-        socket.on('userDisconnected', (userId) => {
-          console.log(`사용자 퇴장: ${userId}`);
-          setConnectedUsers(prev => prev.filter(user => user !== userId));
-        });
-
-        // 채팅 메시지 수신
-        socket.on('chatMessage', (data) => {
-          setChatMessages(prev => [...prev, data]);
-        });
-
-        // 연결 상태 모니터링
-        peerConnection.onconnectionstatechange = () => {
-          console.log('🔗 WebRTC 연결 상태:', peerConnection.connectionState);
-          if (peerConnection.connectionState === 'connected') {
-            console.log('✅ WebRTC 연결 성공!');
-          } else if (peerConnection.connectionState === 'failed') {
-            console.log('❌ WebRTC 연결 실패');
-          }
-        };
-
-        peerConnection.oniceconnectionstatechange = () => {
-          console.log('🧊 ICE 연결 상태:', peerConnection.iceConnectionState);
-        };
-
-        peerConnection.onsignalingstatechange = () => {
-          console.log('📡 시그널링 상태:', peerConnection.signalingState);
-        };
-
+          console.log('✅ Answer 전송 완료 to:', from);
+        }
       } catch (error) {
-        console.error('초기화 오류:', error);
+        console.log('❌ Offer 처리 오류:', error);
       }
+    });
+
+    // Answer 수신 처리
+    socket.on('answer', async (data) => {
+      try {
+        const { from, sdp } = data;
+        console.log('Answer 수신 from:', from);
+
+        if (peerConnectionsRef.current[from]) {
+          const peerConnection = peerConnectionsRef.current[from];
+          const state = peerConnection.connectionState;
+          const signalingState = peerConnection.signalingState;
+
+          console.log('Answer 처리 - Connection 상태:', state, 'Signaling 상태:', signalingState);
+
+          // Remote description이 이미 설정되어 있는지 확인
+          if (peerConnection.remoteDescription) {
+            console.log('Answer 무시 - Remote description이 이미 설정됨');
+            return;
+          }
+
+          // signaling state가 have-local-offer인 경우만 답변 설정
+          if (signalingState === 'have-local-offer') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+            console.log('Answer 설정 완료');
+          } else {
+            console.log('Answer 무시 - 잘못된 signaling 상태:', signalingState);
+          }
+        } else {
+          console.log('Answer 무시 - Peer connection 없음:', from);
+        }
+      } catch (error) {
+        console.log('Answer 처리 오류:', error);
+      }
+    });
+
+    // ICE candidate 수신 처리
+    socket.on('ice-candidate', async (data) => {
+      try {
+        const { from, candidate } = data;
+        console.log('ICE candidate 수신 from:', from);
+
+        if (peerConnectionsRef.current[from]) {
+          const peerConnection = peerConnectionsRef.current[from];
+
+          // Remote description이 설정되어 있는지 확인
+          if (!peerConnection.remoteDescription) {
+            console.log('ICE candidate 무시 - Remote description이 null');
+            return;
+          }
+
+          if (candidate.candidate && candidate.candidate.length > 0) {
+            const iceCandidate = new RTCIceCandidate(candidate);
+            await peerConnection.addIceCandidate(iceCandidate);
+            console.log('ICE candidate 추가 완료');
+          }
+        } else {
+          console.log('ICE candidate 무시 - Peer connection 없음:', from);
+        }
+      } catch (error) {
+        console.log('ICE candidate 처리 오류:', error);
+      }
+    });
+
+    // 사용자 퇴장 처리
+    socket.on('userDisconnected', (userId) => {
+      removePeerConnection(userId);
+    });
+
+    // 추가 이벤트 리스닝 (서버에서 다른 이벤트명 사용 가능성)
+    socket.on('userJoined', (data) => {
+      console.log('🎉 새 사용자 입장:', data);
+      // 새 사용자와 연결 시도
+      if (data && data.userId && data.userId !== socket.id) {
+        setTimeout(async () => {
+          await createPeerConnection(data.userId, true);
+        }, 500);
+      }
+    });
+
+    socket.on('roomUsers', (users) => {
+      console.log('📋 roomUsers 이벤트:', users);
+      if (Array.isArray(users)) {
+        handleUsersInRoom(users);
+      }
+    });
+
+    socket.on('userList', (users) => {
+      console.log('📋 userList 이벤트:', users);
+      if (Array.isArray(users)) {
+        handleUsersInRoom(users);
+      }
+    });
+
+    // 모든 소켓 이벤트 로깅
+    const originalOn = socket.on;
+    socket.on = function(event, handler) {
+      const wrappedHandler = (...args) => {
+        console.log(`📥 Socket 이벤트 수신: ${event}`, args);
+        return handler(...args);
+      };
+      return originalOn.call(this, event, wrappedHandler);
     };
 
-    initializeConnection();
-
-    return () => {
-      console.log('컴포넌트 언마운트 - 연결 정리');
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
-      // ICE candidate 큐 및 플래그 정리
-      iceCandidateQueueRef.current = [];
-      processingOfferRef.current = false;
-      clearStream();
+    // 모든 소켓 emit 로깅
+    const originalEmit = socket.emit;
+    socket.emit = function(event, ...args) {
+      console.log(`📤 Socket 이벤트 전송: ${event}`, args);
+      return originalEmit.call(this, event, ...args);
     };
-  }, [lectureId, setStream, clearStream]);
+  };
 
-  // 메인 비디오 스트림 설정
-  useEffect(() => {
-    if (mainVideoRef.current && myStream) {
-      console.log('메인 비디오에 스트림 설정:', myStream);
-      mainVideoRef.current.srcObject = myStream;
+  // 사용자 목록 처리
+  const handleUsersInRoom = async (users) => {
+    // 사용자 목록의 해시값 생성 (중복 방지)
+    const usersString = users.join(',');
+    const currentHash = usersString.hashCode || usersString.length.toString();
+
+    // 이벤트 디바운싱
+    const now = Date.now();
+    if ((lastUsersUpdateTimeRef.current && (now - lastUsersUpdateTimeRef.current) < 1000) ||
+        (lastUsersListHashRef.current && lastUsersListHashRef.current === currentHash)) {
+      console.log('⏰ usersInRoom 이벤트 무시 - 중복 이벤트 또는 동일한 사용자 목록');
+      return;
     }
-  }, [myStream]);
 
-  // 오디오/비디오 토글
-  const handleAudioToggle = () => {
-    if (!myStream) return;
-    myStream.getAudioTracks().forEach(track => {
-      track.enabled = !track.enabled;
-      setAudioOn(track.enabled);
-    });
+    lastUsersUpdateTimeRef.current = now;
+    lastUsersListHashRef.current = currentHash;
+
+    console.log('=== 방 사용자 목록 수신 ===');
+    console.log('데이터:', users);
+    console.log('해시:', currentHash);
+
+    setUserCount(users.length);
+
+    for (const user of users) {
+      const userId = user.toString();
+
+      // 자신은 제외
+      if (userId === socketRef.current?.id) {
+        continue;
+      }
+
+      // 이미 처리 중인 사용자인지 확인
+      if (processingUsersRef.current.has(userId)) {
+        console.log('⚠️ 이미 처리 중인 사용자:', userId, '- 스킵');
+        continue;
+      }
+
+      // 중복 생성 방지
+      if (peerConnectionsRef.current[userId]) {
+        const existingPc = peerConnectionsRef.current[userId];
+        const state = existingPc.connectionState;
+        const signalingState = existingPc.signalingState;
+
+        // 이미 연결됐거나 연결 중인 경우 스킵
+        if (state === 'connected' || state === 'connecting' || signalingState !== 'stable') {
+          console.log('✅ 이미 활성 연결 존재:', userId, '(state:', state, 'signaling:', signalingState, ')');
+          continue;
+        }
+
+        // 오래된 연결은 정리
+        console.log('🧹 오래된 연결 정리:', userId, '(state:', state, ')');
+        removePeerConnection(userId);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      console.log('🆕 P2P 연결 생성:', userId);
+      processingUsersRef.current.add(userId);
+
+      try {
+        await createPeerConnection(userId, true);
+      } finally {
+        processingUsersRef.current.delete(userId);
+      }
+    }
   };
 
-  const handleVideoToggle = () => {
-    if (!myStream) return;
-    myStream.getVideoTracks().forEach(track => {
-      track.enabled = !track.enabled;
-      setVideoOn(track.enabled);
-    });
+  // PeerConnection 생성
+  const createPeerConnection = async (userId, isOffer) => {
+    try {
+      // 중복 생성 방지
+      if (peerConnectionsRef.current[userId]) {
+        console.log('⚠️ Peer connection 이미 존재함:', userId, '- 무시');
+        return;
+      }
+
+      console.log('🔄 Peer connection 생성 시작:', userId, '(isOffer:', isOffer, ')');
+
+      const configuration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' }
+        ]
+      };
+
+      const peerConnection = new RTCPeerConnection(configuration);
+      peerConnectionsRef.current[userId] = peerConnection;
+
+      // 로컬 스트림 추가
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStreamRef.current);
+        });
+      }
+
+      // 이벤트 핸들러 설정
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && event.candidate.candidate.length > 0 && 
+            socketRef.current && socketRef.current.connected) {
+          socketRef.current.emit('ice-candidate', {
+            to: userId,
+            candidate: event.candidate
+          });
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        console.log('🎥 ontrack 이벤트 발생 from:', userId, 'streams:', event.streams.length);
+        if (event.streams && event.streams.length > 0) {
+          console.log('🎥 원격 스트림 수신 from:', userId);
+          console.log('📺 스트림 트랙 정보:', event.streams[0].getTracks().map(t => ({
+            kind: t.kind,
+            enabled: t.enabled,
+            readyState: t.readyState
+          })));
+          
+          setRemoteStreams(prev => {
+            const newStreams = {
+              ...prev,
+              [userId]: event.streams[0]
+            };
+            console.log('🔄 원격 스트림 상태 업데이트:', Object.keys(newStreams));
+            return newStreams;
+          });
+        } else {
+          console.log('⚠️ ontrack 이벤트에 스트림이 없음 from:', userId);
+        }
+      };
+
+      // 연결 상태 모니터링
+      peerConnection.onconnectionstatechange = () => {
+        console.log('🔗', userId, 'WebRTC 연결 상태:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          console.log('✅', userId, 'WebRTC 연결 성공!');
+        } else if (peerConnection.connectionState === 'failed') {
+          console.log('❌', userId, 'WebRTC 연결 실패');
+        }
+      };
+
+      // Offer 생성
+      if (isOffer && socketRef.current && socketRef.current.connected) {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        socketRef.current.emit('offer', {
+          to: userId,
+          sdp: offer
+        });
+        console.log('✅ Offer 전송 완료 to:', userId);
+      }
+    } catch (error) {
+      console.log('Peer connection 생성 오류:', error);
+    }
   };
 
-  const handleHangup = () => {
-    if (myStream) {
-      myStream.getTracks().forEach(track => {
-        track.stop();
+  // PeerConnection 제거
+  const removePeerConnection = async (userId) => {
+    try {
+      if (peerConnectionsRef.current[userId]) {
+        peerConnectionsRef.current[userId].close();
+        delete peerConnectionsRef.current[userId];
+      }
+
+      setRemoteStreams(prev => {
+        const newStreams = { ...prev };
+        delete newStreams[userId];
+        return newStreams;
       });
-      clearStream();
+
+      setUserCount(Object.keys(peerConnectionsRef.current).length + 1);
+    } catch (error) {
+      console.log('Peer connection 제거 오류:', error);
     }
-    if (socketRef.current) {
-      socketRef.current.disconnect();
+  };
+
+  // WebRTC 초기화
+  const initialize = async () => {
+    try {
+      // 이미 초기화 중이거나 연결된 상태면 무시
+      if (state === WebRTCState.INITIALIZING || state === WebRTCState.CONNECTED) {
+        console.log('이미 초기화 중이거나 연결됨 - 무시');
+        return;
+      }
+
+      setIsDisposed(false);
+      console.log('🚀 WebRTC 초기화 시작');
+
+      // 기존 연결 정리
+      await cleanupWithoutDisposing();
+
+      updateState(WebRTCState.INITIALIZING, '카메라 접근 중...');
+
+      // 로컬 스트림 초기화
+      await initializeLocalStream();
+
+      updateState(WebRTCState.INITIALIZING, '서버 연결 중...');
+
+      // 소켓 연결
+      if (localStreamRef.current) {
+        await connectToSocket();
+        updateState(WebRTCState.CONNECTED, '연결 완료');
+
+        // 연결 완료 후 렌더러 강제 새로고침
+        setTimeout(async () => {
+          await refreshLocalRenderer();
+        }, 500);
+      } else {
+        updateState(WebRTCState.ERROR, null, '로컬 스트림을 생성할 수 없습니다');
+      }
+    } catch (error) {
+      console.log('WebRTC 초기화 오류:', error);
+      updateState(WebRTCState.ERROR, null, `초기화 실패: ${error.message}`);
     }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+  };
+
+  // 렌더러 새로고침
+  const refreshLocalRenderer = async () => {
+    try {
+      console.log('🔄 렌더러 강제 새로고침 시작');
+      await assignStreamToRenderer();
+      console.log('🔄 렌더러 강제 새로고침 완료');
+    } catch (error) {
+      console.log('렌더러 새로고침 오류:', error);
     }
+  };
+
+  // 마이크 토글
+  const toggleMicrophone = async () => {
+    try {
+      if (localStreamRef.current && !isDisposed) {
+        const newMicState = !isMicEnabled;
+        setIsMicEnabled(newMicState);
+        localStreamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = newMicState;
+        });
+        console.log('마이크', newMicState ? '켜짐' : '꺼짐');
+      }
+    } catch (error) {
+      console.log('마이크 토글 오류:', error);
+    }
+  };
+
+  // 카메라 토글
+  const toggleCamera = async () => {
+    try {
+      if (localStreamRef.current && !isDisposed) {
+        const newVideoState = !isVideoEnabled;
+        setIsVideoEnabled(newVideoState);
+        localStreamRef.current.getVideoTracks().forEach(track => {
+          track.enabled = newVideoState;
+        });
+        console.log('카메라', newVideoState ? '켜짐' : '꺼짐');
+      } else if (!isDisposed) {
+        // 스트림이 없으면 재시작
+        await restartLocalStream();
+      }
+    } catch (error) {
+      console.log('카메라 토글 오류:', error);
+    }
+  };
+
+  // 로컬 스트림 재시작
+  const restartLocalStream = async () => {
+    try {
+      if (isDisposed) return;
+
+      console.log('로컬 스트림 재시작 시작');
+      updateState(WebRTCState.INITIALIZING, '비디오 재시작 중...');
+
+      // 기존 스트림 정리
+      if (localStreamRef.current) {
+        console.log('기존 스트림 정리');
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+
+      // 비디오 요소 초기화
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // 새 스트림 생성
+      await initializeLocalStream();
+
+      // 기존 peer connection들에 새 스트림 추가
+      if (localStreamRef.current) {
+        console.log('기존 peer connection들에 새 스트림 추가');
+        for (const peerConnection of Object.values(peerConnectionsRef.current)) {
+          try {
+            const senders = peerConnection.getSenders();
+            for (const sender of senders) {
+              if (sender.track) {
+                peerConnection.removeTrack(sender);
+              }
+            }
+
+            localStreamRef.current.getTracks().forEach(track => {
+              peerConnection.addTrack(track, localStreamRef.current);
+            });
+          } catch (error) {
+            console.log('Peer connection 스트림 업데이트 오류:', error);
+          }
+        }
+      }
+
+      updateState(WebRTCState.CONNECTED, '비디오 재시작 완료');
+      console.log('로컬 스트림 재시작 완료');
+    } catch (error) {
+      console.log('로컬 스트림 재시작 오류:', error);
+      updateState(WebRTCState.ERROR, null, `스트림 재시작 실패: ${error.message}`);
+    }
+  };
+
+  // 정리 (disposed 상태 유지하지 않음)
+  const cleanupWithoutDisposing = async () => {
+    try {
+      console.log('🧹 재초기화용 정리 시작');
+
+      // 소켓 연결 정리
+      if (socketRef.current) {
+        try {
+          socketRef.current.disconnect();
+          socketRef.current = null;
+          console.log('소켓 연결 정리 완료');
+        } catch (error) {
+          console.log('소켓 연결 정리 오류:', error);
+        }
+      }
+
+      // Peer connection 정리
+      for (const pc of Object.values(peerConnectionsRef.current)) {
+        try {
+          pc.close();
+        } catch (error) {
+          console.log('Peer connection 종료 오류:', error);
+        }
+      }
+      peerConnectionsRef.current = {};
+
+      // 로컬 스트림 정리
+      if (localStreamRef.current) {
+        try {
+          localStreamRef.current.getTracks().forEach(track => track.stop());
+          localStreamRef.current = null;
+        } catch (error) {
+          console.log('로컬 스트림 정리 오류:', error);
+        }
+      }
+
+      // 상태 초기화
+      setState(WebRTCState.IDLE);
+      setStatusMessage('');
+      setErrorMessage(null);
+      setUserCount(1);
+      setIsMicEnabled(true);
+      setIsVideoEnabled(true);
+      setRemoteStreams({});
+
+      console.log('🧹 재초기화용 정리 완료');
+    } catch (error) {
+      console.log('재초기화용 정리 중 오류:', error);
+    }
+  };
+
+  // 완전 정리
+  const cleanup = async () => {
+    try {
+      setIsDisposed(true);
+      console.log('🔚 WebRTC 정리 시작');
+
+      // 서버에 연결 종료 알림
+      if (socketRef.current && socketRef.current.connected) {
+        try {
+          console.log('📤 서버에 연결 종료 알림 전송');
+          socketRef.current.emit('leaveRoom', {
+            room: room,
+            userId: socketRef.current.id
+          });
+
+          socketRef.current.emit('userLeaving', {
+            room: room,
+            userId: socketRef.current.id
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log('✅ 서버 종료 알림 전송 완료');
+        } catch (error) {
+          console.log('❌ 서버 종료 알림 전송 오류:', error);
+        }
+      }
+
+      await cleanupWithoutDisposing();
+      console.log('WebRTC 정리 완료');
+    } catch (error) {
+      console.log('정리 중 오류:', error);
+    }
+  };
+
+  // 강의 종료
+  const handleHangup = async () => {
+    await cleanup();
     router.push(`/professor/lecture/${lectureId}/complete`);
   };
 
@@ -371,7 +854,7 @@ export default function ProfessorLecture({lectureId}) {
   const handleSendMessage = () => {
     if (messageInput.trim() && socketRef.current) {
       const messageData = {
-        room: 'testRoom',
+        room: room,
         sender: '교수',
         message: messageInput.trim(),
         timestamp: new Date().toLocaleTimeString('ko-KR', { 
@@ -393,18 +876,44 @@ export default function ProfessorLecture({lectureId}) {
     }
   };
 
-  // 학생 목록 생성 (원격 비디오 + 플레이스홀더)
+  // 컴포넌트 마운트 시 초기화
+  useEffect(() => {
+    initialize();
+
+    // 강의 시간 타이머
+    const timer = setInterval(() => {
+      setLectureTime(prev => prev + 1);
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+      cleanup();
+    };
+  }, [lectureId]);
+
+  // 채팅 메시지 수신
+  useEffect(() => {
+    if (socketRef.current) {
+      socketRef.current.on('chatMessage', (data) => {
+        setChatMessages(prev => [...prev, data]);
+      });
+    }
+  }, [socketRef.current]);
+
+  // 학생 목록 생성
   const students = [];
   
-  // 실제 연결된 학생들 (원격 스트림이 있으면 표시)
-  if (remoteStream) {
-    students.push({
-      id: 'remote_student',
-      name: '학생 1',
-      isConnected: true,
-      stream: remoteStream
-    });
-  }
+  // 실제 연결된 학생들
+  Object.entries(remoteStreams).forEach(([userId, stream], index) => {
+    if (stream) {
+      students.push({
+        id: userId,
+        name: `학생 ${index + 1}`,
+        isConnected: true,
+        stream: stream
+      });
+    }
+  });
   
   // 나머지는 플레이스홀더로 채우기 (최대 16개)
   while (students.length < 16) {
@@ -425,6 +934,20 @@ export default function ProfessorLecture({lectureId}) {
           <span className={styles.lectureTitle}>최신기술콜로키움</span>
           <span className={styles.lectureTime}>{formatTime(lectureTime)}</span>
         </div>
+
+        {/* 상태 표시 */}
+        {state === WebRTCState.INITIALIZING && (
+          <div className={styles.statusMessage}>
+            {statusMessage}
+          </div>
+        )}
+        
+        {state === WebRTCState.ERROR && (
+          <div className={styles.errorMessage}>
+            {errorMessage}
+          </div>
+        )}
+
         {/* 상단: 학생 비디오 (가로 스크롤) */}
         <div className={styles.studentsRow}>
           {students.map((student) => (
@@ -444,7 +967,7 @@ export default function ProfessorLecture({lectureId}) {
                   }}
                   ref={(el) => {
                     if (el && student.stream) {
-                      console.log(`비디오 요소에 스트림 설정: ${student.id}`, student.stream);
+                      console.log(`비디오 요소에 스트림 설정: ${student.id}`);
                       el.srcObject = student.stream;
                     }
                   }}
@@ -456,94 +979,70 @@ export default function ProfessorLecture({lectureId}) {
             </div>
           ))}
         </div>
+
         {/* 메인 강의(교수님) 비디오 */}
         <div className={styles.lectureBox}>
-          {myStream ? (
+          {localStreamRef.current && isVideoEnabled ? (
             <video
-              ref={mainVideoRef}
+              ref={localVideoRef}
               autoPlay
               playsInline
               muted
               className={styles.professorVideo}
-              style={{ display: videoOn ? 'block' : 'none' }}
             />
-          ) : null}
-          {!myStream || !videoOn ? (
+          ) : (
             <div className={styles.professorVideoPlaceholder}>
               <div className={styles.placeholderText}>교수님 화면</div>
             </div>
-          ) : null}
+          )}
         </div>
+
         {/* 하단 컨트롤 */}
         <div className={styles.controls}>
-          <button
-            className={`${styles.statusBtn} ${!audioOn ? styles.muted : ''}`}
-            onClick={handleAudioToggle}
-            type="button"
-            disabled={!myStream}
+          <button 
+            className={`${styles.controlBtn} ${!isMicEnabled ? styles.disabled : ''}`}
+            onClick={toggleMicrophone}
           >
-            <img src={audioOn ? "/images/icons/audio_on.png" : "/images/icons/audio_off.png"} alt="음소거" />
-            {audioOn ? '음소거 해제' : '음소거'}
+            🎤
           </button>
-          <button
-            className={`${styles.statusBtn} ${!videoOn ? styles.muted : ''}`}
-            onClick={handleVideoToggle}
-            type="button"
-            disabled={!myStream}
+          <button 
+            className={`${styles.controlBtn} ${!isVideoEnabled ? styles.disabled : ''}`}
+            onClick={toggleCamera}
           >
-            <img src={videoOn ? "/images/icons/video_on.png" : "/images/icons/video_off.png"} alt="비디오" />
-            {videoOn ? '비디오 중지' : '비디오 사용'}
+            📹
           </button>
           <button className={styles.hangupBtn} onClick={handleHangup}>
-            <img src="/images/icons/call.png" alt="통화 종료" />
+            📞
           </button>
         </div>
       </div>
-      {/* 우측: 참석자 목록 & 채팅 */}
+
+      {/* 우측: 채팅 */}
       <div className={styles.right}>
-        <div className={styles.participantPanel}>
-          <div className={styles.participantHeader}>참석자 ({connectedUsers.length}명)</div>
-          <ul className={styles.participantList}>
-            <li><span className={styles.participantNumber}>1</span>교수 (나)</li>
-            {connectedUsers.map((user, idx) => {
-              if (user !== socketRef.current?.id) {
-                return (
-                  <li key={user}>
-                    <span className={styles.participantNumber}>{idx + 2}</span>
-                    학생 {idx + 1}
-                  </li>
-                );
-              }
-              return null;
-            })}
-          </ul>
+        <div className={styles.chatHeader}>
+          <span>채팅</span>
+          <span className={styles.userCount}>참여자 {userCount}명</span>
         </div>
-        <div className={styles.chatPanel}>
-          <div className={styles.chatHeader}>채팅</div>
-          <div className={styles.chatMessages}>
-            {chatMessages.map((msg, idx) => (
-              <div key={idx} className={styles.chatMessage}>
-                <div className={styles.chatMessageHeader}>
-                  <span className={styles.chatMessageSender}>{msg.sender}</span>
-                  <span className={styles.chatMessageTime}>{msg.timestamp}</span>
-                </div>
-                <span className={styles.chatMessageText}>{msg.message}</span>
-              </div>
-            ))}
-          </div>
-          <div className={styles.chatInput}>
-            <input 
-              type="text" 
-              placeholder="메시지를 입력하세요..." 
-              className={styles.messageInput}
-              value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-            />
-            <button className={styles.sendButton} onClick={handleSendMessage}>
-              전송
-            </button>
-          </div>
+        
+        <div className={styles.chatMessages}>
+          {chatMessages.map((msg, index) => (
+            <div key={index} className={styles.chatMessage}>
+              <div className={styles.chatSender}>{msg.sender}</div>
+              <div className={styles.chatText}>{msg.message}</div>
+              <div className={styles.chatTime}>{msg.timestamp}</div>
+            </div>
+          ))}
+        </div>
+        
+        <div className={styles.chatInput}>
+          <input
+            type="text"
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="메시지를 입력하세요..."
+          />
+          <button onClick={handleSendMessage}>전송</button>
         </div>
       </div>
     </div>
